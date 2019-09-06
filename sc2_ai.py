@@ -7,20 +7,32 @@ import random
 import numpy as np
 import cv2
 import time
+import keras
 
 HEADLESS = False
 
 
 class SubiBot(sc2.BotAI):
-    def __init__(self):
+    def __init__(self, use_model=False):
         self.ITERATIONS_PER_MINUTE = 165
         self.MAX_WORKERS = 50
         self.do_something_after = 0
         self.train_data = []
+        self.use_model = use_model
+
+        if self.use_model:
+            print("USING MODEL!")
+            self.model = keras.models.load_model('BasicCNN-10-epochs-0.0001-LR-STAGE1')
 
     def on_end(self, game_result):
         print('--- on_end called ---')
-        print(game_result)
+        print(game_result, self.use_model)
+
+        with open("log.txt", "a") as file:
+            if self.use_model:
+                file.write("Model {}\n".format(game_result))
+            else:
+                file.write("Random {}\n".format(game_result))
 
         if game_result == Result.Victory:
             np.save("D:\\train_data/{}.npy".format(str(int(time.time()))), np.array(self.train_data))
@@ -122,9 +134,18 @@ class SubiBot(sc2.BotAI):
     async def attack(self):
         """attack the enemy"""
         if len(self.units(VOIDRAY).idle) > 4:
-            choice = random.randrange(0, 4)
             target = False
             if self.iteration > self.do_something_after:
+                if self.use_model:
+                    prediction = self.model.predict([self.flipped.reshape([-1, 176, 200, 3])])
+                    choice = np.argmax(prediction[0])
+                    choice_dict = {0: "No Attack!",
+                                   1: "Attack close to our nexus!",
+                                   2: "Attack enemy structures!",
+                                   3: "Attack enemy start"}
+                    print("Choice: #{}:{}".format(choice, choice_dict[choice]))
+                else:
+                    choice = random.randrange(0, 4)
                 if choice == 0:
                     # no attack
                     wait = random.randrange(20, 165)
@@ -235,12 +256,10 @@ class SubiBot(sc2.BotAI):
                     await self.do(rf.train(OBSERVER))
 
 
-
-x = 0
-
-while x < 50:
+for i in range(50):
+    print("Game # {} started".format(i))
     run_game(maps.get("AbyssalReefLE"), [
-        Bot(Race.Protoss, SubiBot()),
+        Bot(Race.Protoss, SubiBot(use_model=True)),
         Computer(Race.Terran, Difficulty.Hard)
     ], realtime=False)
-    x += 1
+
